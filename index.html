@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1625">
+  <meta name="description" content="Island Lab — панель музыки, погоды и инструментов рабочего стола Windows.">
+  <title>Island Lab</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./system-media.js" defer></script>
+  <script src="./audio-visualizer.js" defer></script>
+  <script src="./desktop-mode.js" defer></script>
+  <script src="./motion.js" defer></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <svg class="glyph-library" aria-hidden="true">
+    <symbol id="glyph-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM9 21v-8h6v8"/></symbol>
+    <symbol id="glyph-camera" viewBox="0 0 24 24"><path d="M14 4h-4L8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></symbol>
+    <symbol id="glyph-snow" viewBox="0 0 24 24"><path d="M12 2v20M4.9 5l14.2 14M2 12h20M5 19 19 5M9 5l3 3 3-3m-6 14 3-3 3 3"/></symbol>
+    <symbol id="glyph-note" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 8h6m-6 4h6m-6 4h4"/></symbol>
+    <symbol id="glyph-settings" viewBox="0 0 24 24"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+  <circle cx="12" cy="12" r="3" /></symbol>
+    <symbol id="glyph-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="17" cy="16" rx="3" ry="2"/></symbol>
+    <symbol id="glyph-cloud" viewBox="0 0 24 24"><path d="M18 17a4 4 0 0 0 0-8h-1.3A6 6 0 1 0 6 17z"/></symbol>
+    <symbol id="glyph-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+    <symbol id="glyph-prev" viewBox="0 0 24 24"><path class="solid" d="M5 6h2v12H5zm13 0v12l-9-6z"/></symbol>
+    <symbol id="glyph-next" viewBox="0 0 24 24"><path class="solid" d="M17 6h2v12h-2zM6 6v12l9-6z"/></symbol>
+    <symbol id="glyph-play" viewBox="0 0 24 24"><path class="solid" d="M8 5v14l11-7z"/></symbol>
+    <symbol id="glyph-pause" viewBox="0 0 24 24"><path class="solid" d="M7 5h4v14H7zm6 0h4v14h-4z"/></symbol>
+    <symbol id="glyph-wave" viewBox="0 0 24 24"><path d="M3 12h2m3-4v8m4-12v16m4-14v12m4-8v4"/></symbol>
+    <symbol id="glyph-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="glyph-windows" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></symbol>
+  </svg>
+  <main id="desktop" aria-label="Панель рабочего стола">
+    <div class="desktop-haze"></div>
+    <div class="desktop-caption"><span class="caption-star">✳</span><strong>ISLAND LAB</strong><span>DESKTOP EXPERIENCE</span></div>
+    <div class="desktop-time" id="desktopClock">08:42</div>
+    <div class="desktop-instruction">Нажми на капсулу сверху, чтобы раскрыть её · Перетащи за пустую область · Esc — свернуть</div>
+
+    <section class="island-shell" id="shell" aria-label="Island Lab">
+      <div class="island collapsed" id="island">
+        <div class="collapsed-bar" id="collapsedBar">
+          <div class="micro-player" aria-label="Мини-проигрыватель">
+            <button class="mini-btn" type="button" data-player="prev" title="Предыдущий трек" aria-label="Предыдущий трек"><svg class="glyph" aria-hidden="true"><use href="#glyph-prev"/></svg></button>
+            <button class="mini-btn main-play" type="button" data-player="toggle" title="Воспроизвести или поставить на паузу" aria-label="Воспроизвести"><svg class="glyph play-icon" aria-hidden="true"><use href="#glyph-play"/></svg><svg class="glyph pause-icon" aria-hidden="true"><use href="#glyph-pause"/></svg></button>
+            <button class="mini-btn" type="button" data-player="next" title="Следующий трек" aria-label="Следующий трек"><svg class="glyph" aria-hidden="true"><use href="#glyph-next"/></svg></button>
+          </div>
+          <button id="expandTarget" class="collapsed-middle" type="button" title="Развернуть Island Lab" aria-label="Развернуть Island Lab"><span class="capsule-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="collapsed-label">Island Lab</span></button>
+          <button class="micro-weather" id="miniWeather" type="button" aria-label="Настроить погоду"><span id="miniWeatherIcon"><svg class="glyph" aria-hidden="true"><use href="#glyph-cloud"/></svg></span><span id="miniTemperature">—</span></button>
+        </div>
+
+        <div class="expanded-panel" id="expandedPanel" inert>
+          <header class="panel-header">
+            <div class="brand-mark" aria-hidden="true"><span></span></div>
+            <div class="brand-name"><strong>Island Lab</strong></div>
+            <div class="panel-drag" id="dragHandle" aria-label="Перетащить панель"></div>
+            <div class="header-right"><button class="icon-button" id="openSettings" type="button" aria-label="Настройки" title="Настройки"><svg class="glyph" aria-hidden="true"><use href="#glyph-settings"/></svg></button><button id="collapseButton" class="icon-button" type="button" aria-label="Свернуть Island Lab" title="Свернуть"><svg class="glyph" aria-hidden="true"><use href="#glyph-up"/></svg></button></div>
+          </header>
+
+          <nav class="tabs" role="tablist" aria-label="Разделы">
+            <button type="button" id="tab-home" class="tab active" role="tab" data-tab="home" aria-controls="view-home" aria-selected="true" tabindex="0"><svg class="glyph" aria-hidden="true"><use href="#glyph-home"/></svg> <span>Главная</span></button>
+            <button type="button" id="tab-shots" class="tab" role="tab" data-tab="shots" aria-controls="view-shots" aria-selected="false" tabindex="-1"><svg class="glyph" aria-hidden="true"><use href="#glyph-camera"/></svg> <span>Скриншоты</span></button>
+            <button type="button" id="tab-snow" class="tab" role="tab" data-tab="snow" aria-controls="view-snow" aria-selected="false" tabindex="-1"><svg class="glyph" aria-hidden="true"><use href="#glyph-snow"/></svg> <span>Snowy New Year</span></button>
+            <button type="button" id="tab-notes" class="tab" role="tab" data-tab="notes" aria-controls="view-notes" aria-selected="false" tabindex="-1"><svg class="glyph" aria-hidden="true"><use href="#glyph-note"/></svg> <span>Блокнот</span></button>
+
+            <button type="button" id="tab-weather" class="tab" role="tab" data-tab="weather" aria-controls="view-weather" aria-selected="false" tabindex="-1"><svg class="glyph" aria-hidden="true"><use href="#glyph-cloud"/></svg> <span>Погода</span></button>
+          </nav>
+
+          <div class="panel-body">
+            <section class="tab-content active" id="view-home" role="tabpanel" tabindex="0" aria-labelledby="tab-home">
+
+              <div class="home-grid">
+                <article class="card music-card">
+                  <div class="card-eyebrow">Музыка <span id="queueCount" class="right-muted"></span></div>
+                  <div class="track-summary">
+                    <div class="cover"><span><svg class="glyph" aria-hidden="true"><use href="#glyph-music"/></svg></span><div class="cover-glow"></div></div>
+                    <div class="track-details">
+                      <div class="track-name" id="trackName">Нет воспроизведения</div>
+                      <div class="muted" id="trackArtist">Добавьте аудио или подключите плеер</div>
+                    </div>
+                    <button class="icon-button" id="addMusic" type="button" aria-label="Добавить музыку" title="Добавить музыку"><svg class="glyph" aria-hidden="true"><use href="#glyph-plus"/></svg></button>
+                    <input id="musicFile" type="file" accept="audio/*" multiple hidden>
+                  </div>
+                  <div class="timeline"><input type="range" id="seek" value="0" min="0" max="100" aria-label="Перемотка"></div>
+                  <div class="time-labels"><span id="timeNow">0:00</span><span id="timeEnd">0:00</span></div>
+                  <div class="player-buttons">
+                    <button type="button" class="icon-button" data-player="prev" aria-label="Предыдущий"><svg class="glyph" aria-hidden="true"><use href="#glyph-prev"/></svg></button>
+                    <button type="button" class="icon-button play-big" data-player="toggle" aria-label="Воспроизвести"><svg class="glyph play-icon" aria-hidden="true"><use href="#glyph-play"/></svg><svg class="glyph pause-icon" aria-hidden="true"><use href="#glyph-pause"/></svg></button>
+                    <button type="button" class="icon-button" data-player="next" aria-label="Следующий"><svg class="glyph" aria-hidden="true"><use href="#glyph-next"/></svg></button>
+                    <button class="icon-button native-only" id="toggleWindowsWave" type="button" aria-label="Волна из звука Windows" title="Волна из звука Windows" aria-pressed="false" hidden><svg class="glyph" aria-hidden="true"><use href="#glyph-wave"/></svg></button>
+                    <button class="icon-button native-only" id="connectWindows" type="button" aria-label="Подключить плеер Windows" title="Подключить плеер Windows"><svg class="glyph" aria-hidden="true"><use href="#glyph-windows"/></svg></button>
+                  </div>
+                </article>
+                <article class="card lyrics-card">
+                  <div class="card-eyebrow">Слова песни</div>
+                  <div class="lyric-drum">
+                    <div class="lyrics-empty" id="lyricsEmpty">
+                      <span id="lyricsEmptyText">Слова песни появятся здесь</span>
+                      <button type="button" class="small-action" id="findLyricsInline">Найти слова</button>
+                    </div>
+                    <div class="lyrics-scroll" id="lyricsScroll" aria-label="Синхронный текст песни" tabindex="0" hidden>
+                      <div class="lyrics-track" id="lyricsTrackLines"></div>
+                    </div>
+                  </div>
+                </article>
+                <article class="card weather-card">
+                  <div class="card-eyebrow">Погода <span class="right-muted" id="weatherSource"></span></div>
+                  <div class="weather-reading">
+                    <div class="weather-symbol" id="weatherIcon"><svg class="glyph" aria-hidden="true"><use href="#glyph-cloud"/></svg></div>
+                    <div class="weather-temperature" id="weatherTemp">—</div>
+                  </div>
+                  <div class="weather-conditions" id="weatherText">Город не выбран</div>
+                  <div class="weather-details">
+                    <span class="weather-city" id="weatherCity"></span>
+                    <span class="weather-wind" id="weatherWind"></span>
+                  </div>
+                  <button class="small-action weather-action" id="refreshWeather" type="button" title="Получить актуальную погоду по выбранному городу">Выбрать город</button>
+                </article>
+              </div>
+
+            </section>
+
+            <section class="tab-content" id="view-shots" role="tabpanel" tabindex="0">
+              <div class="shot-launch card">
+                <div><h2>Скриншоты</h2><p class="muted native-only" id="printScreenStatus">Print Screen открывает редактор</p></div>
+                <div class="actions"><button class="primary-action" type="button" id="captureScreen">Сделать снимок</button><button class="secondary-action native-only" type="button" id="openImageEditor">Открыть редактор</button><button class="secondary-action native-only" type="button" id="openShotsFolder">Открыть папку</button></div>
+              </div>
+              <div id="editorWorkspace" hidden>
+                <div class="editor-actions">
+                  <button type="button" class="secondary-action" id="chooseImage">Открыть изображение</button><input id="imageFile" type="file" accept="image/*" hidden>
+                  <button type="button" class="primary-action" id="saveShot" disabled>Сохранить PNG</button>
+                </div>
+              <div class="toolstrip" id="editorTools" aria-label="Инструменты рисования" hidden>
+                <button type="button" class="tool active" data-tool="pen" title="Карандаш">✎</button>
+                <button type="button" class="tool" data-tool="marker" title="Полупрозрачный маркер">🖉</button>
+                <button type="button" class="tool" data-tool="arrow" title="Стрелка">↗</button>
+                <button type="button" class="tool" data-tool="rect" title="Прямоугольник">▭</button>
+                <button type="button" class="tool" data-tool="ellipse" title="Овал">◯</button>
+                <button type="button" class="tool" data-tool="crop" title="Выделить область обрезки">⌗</button>
+                <button type="button" class="tool" data-tool="text" title="Текст">T</button>
+                <button type="button" class="tool" data-tool="eraser" title="Ластик">⌫</button>
+                <div class="tool-divider"></div><label class="tool-color" title="Выбор цвета"><input type="color" id="penColor" value="#8dd9f6"></label><label class="range-label">Размер <input type="range" min="2" max="30" value="5" id="penSize"></label>
+                <div class="tool-divider"></div><button type="button" class="tool" id="undo" title="Отменить">↶</button><button type="button" class="tool" id="redo" title="Повторить">↷</button><button type="button" class="tool" id="clearEdits" title="Очистить рисунок">✕</button>
+              </div>
+              <div class="editor-stage"><div class="editor-frame" hidden><canvas id="imageCanvas" width="1080" height="608"></canvas><canvas id="drawCanvas" width="1080" height="608"></canvas><div id="cropOutline" class="crop-outline" hidden aria-hidden="true"></div></div></div>
+              </div>
+            </section>
+
+            <section class="tab-content" id="view-snow" role="tabpanel" tabindex="0">
+              <div class="snow-card card">
+                <div class="snow-heading"><span class="snow-illustration"><svg class="glyph" aria-hidden="true"><use href="#glyph-snow"/></svg></span><div><h2>Снег на рабочем столе</h2><p class="muted" id="snowStatus" role="status">Проверяем Snowy New Year…</p></div></div>
+                <fieldset id="snowControls" disabled hidden>
+                  <label class="switch-row"><span>Снегопад</span><input type="checkbox" id="snowToggle"><i></i></label>
+                  <label class="switch-row"><span>Снежные шапки</span><input type="checkbox" id="capsToggle"><i></i></label>
+                  <label class="switch-row"><span>Лепка снеговиков</span><input type="checkbox" id="snowmenToggle"><i></i></label>
+                  <label class="range-row">Интенсивность <input id="snowIntensity" type="range" min="0" max="100"><span id="snowPercent"></span></label>
+                </fieldset>
+                <div class="actions snow-actions">
+                  <button class="primary-action" id="downloadSnowy" type="button" hidden>Скачать с GitHub</button>
+                  <button class="secondary-action" id="downloadSnowyBundle" type="button" hidden>Комплект с Island Lab</button>
+                  <button class="secondary-action" id="locateSnowy" type="button" hidden>Указать файл .exe</button>
+                  <button class="primary-action" id="startSnowy" type="button" hidden>Запустить Snowy New Year</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="tab-content" id="view-notes" role="tabpanel" tabindex="0">
+              <div class="notes-layout">
+                <aside class="notes-side"><button type="button" class="primary-action" id="addNote">＋ Новая заметка</button><select class="notes-list" id="notesList" aria-label="Заметка"></select></aside>
+                <div class="note-editor"><input id="noteTitle" aria-label="Название заметки" placeholder="Название заметки"><textarea id="noteBody" aria-label="Текст заметки" placeholder="Текст заметки…" spellcheck="true"></textarea><div class="note-foot"><span id="noteSaved">Сохранено локально</span><button id="deleteNote" type="button" class="secondary-action danger">Удалить</button></div></div>
+              </div>
+            </section>
+
+            <section class="tab-content" id="view-weather" role="tabpanel" tabindex="0">
+              <div class="card shot-launch">
+                <div><h2 id="weatherTabCity">Город не выбран</h2><p class="muted" id="weatherTabConditions">Укажите город для прогноза</p></div>
+                <div class="weather-temperature" id="weatherTabTemperature">—</div>
+                <div class="actions"><button class="secondary-action" id="weatherTabRefresh" type="button">Обновить</button><button class="secondary-action" id="weatherTabSettings" type="button">Выбрать город</button></div>
+              </div>
+            </section>
+
+            <section class="tab-content" id="view-settings" role="tabpanel" tabindex="0">
+              <div class="settings-tabs" role="group" aria-label="Разделы настроек">
+                <button type="button" data-settings-tab="general" aria-pressed="true">Общие</button>
+                <button type="button" data-settings-tab="music" aria-pressed="false">Музыка</button>
+                <button type="button" data-settings-tab="weather" aria-pressed="false">Погода</button>
+                <button type="button" data-settings-tab="system" aria-pressed="false">Система</button>
+                <button type="button" data-settings-tab="diagnostics" aria-pressed="false">Диагностика</button>
+              </div>
+              <div class="settings-grid">
+                <div class="card settings-card" id="lyricsSettings" data-settings-page="music" hidden>
+                  <h2>Слова песни</h2>
+                  <div class="lyrics-lookup">
+                    <div class="lyrics-lookup-fields">
+                      <input id="lyricsTrack" type="text" maxlength="160" placeholder="Название песни" autocomplete="off" aria-label="Название песни для поиска текста">
+                      <input id="lyricsArtist" type="text" maxlength="160" placeholder="Исполнитель" autocomplete="off" aria-label="Исполнитель для поиска текста">
+                    </div>
+                    <button type="button" class="small-action lyrics-search" id="findLyrics">⌕ Найти слова</button>
+                  </div>
+                  <div class="lyrics-offset">
+                    <span>Сдвиг текста</span>
+                    <button type="button" class="offset-button" id="lyricsEarlier" title="Показывать текст раньше">−</button>
+                    <output id="lyricsOffset">0.0 с</output>
+                    <button type="button" class="offset-button" id="lyricsLater" title="Показывать текст позже">＋</button>
+                  </div>
+                  <div class="lyrics-footer"><span class="muted" id="lyricStatus">Файл .lrc</span><button class="small-action" id="chooseLyrics" type="button">Загрузить LRC</button><input id="lyricsFile" type="file" accept=".lrc,text/plain" hidden></div>
+                </div>
+                <div class="card settings-card" data-settings-page="general"><h2>Оформление</h2><label>Акцентный цвет <input id="accentColor" type="color" value="#8dd9f6"></label><label>Сила волны <input id="wavePower" type="range" min="10" max="160" value="100"><span id="waveValue">100%</span></label><label class="switch-row"><span>Аудиореактивная граница</span><input type="checkbox" id="waveToggle" checked><i></i></label><label class="switch-row browser-only"><span>Снег на фоне страницы</span><input type="checkbox" id="backgroundSnow" checked><i></i></label></div>
+                <div class="card settings-card" data-settings-page="general"><h2>Поведение</h2>
+                  <label class="motion-style-control">Характер анимаций
+                    <select id="motionStyle" aria-label="Характер анимаций">
+                      <option value="fluid">Плавный · пружинный</option>
+                      <option value="quick">Быстрый · отзывчивый</option>
+                      <option value="calm">Спокойный · мягкий</option>
+                    </select>
+                  </label>
+                  <label class="switch-row"><span>Уменьшить анимации <small>Также учитывает настройку Windows</small></span><input type="checkbox" id="reducedMotion"><i></i></label>
+                  <div class="motion-benchmark">
+                    <button type="button" class="secondary-action" id="motionBenchmarkBtn">Измерить плавность · 8 секунд</button>
+                    <output class="muted small" id="motionBenchmarkResult" aria-live="polite">Во время проверки переключай вкладки и включи музыку.</output>
+                  </div><button class="secondary-action" type="button" id="resetPosition">Сбросить положение островка</button><p class="muted small">Погода онлайн запрашивается только по введённому городу. Настройки и заметки хранятся на этом устройстве.</p></div>
+                  <div class="card settings-card system-player-control native-only" data-settings-page="music" hidden>
+                    <h2>Музыка Windows</h2>
+                    <label class="switch-row"><span>Плеер Windows <small>Управлять активной системной музыкой</small></span><input type="checkbox" id="systemPlayerToggle"><i></i></label>
+                    <span class="muted system-player-status" id="systemPlayerStatus">Не подключён</span>
+                    <label class="switch-row"><span>Волны из звука Windows <small>Анализирует звук устройства вывода, включая уведомления; не записывает и не отправляет аудио.</small></span><input type="checkbox" id="systemWaveToggle" disabled><i></i></label>
+                    <span class="muted system-player-status" id="systemWaveStatus">Захват выключен</span>
+                  </div>
+                <div class="card settings-card native-only desktop-preview-card" data-settings-page="system" hidden>
+                  <h2>Размещение на рабочем столе</h2>
+                  <p class="muted small">Островок можно расположить под обычными окнами. Видимость зависит от порядка окон на рабочем столе.</p>
+                  <div class="desktop-preview-status" id="desktopModeStatus" role="status">Обычное окно · безопасный режим</div>
+                  <div class="desktop-preview-actions">
+                    <button type="button" class="secondary-action" id="desktopModeTry">Проверить 20 секунд</button>
+                    <button type="button" class="primary-action" id="desktopModeKeep" disabled>Оставить до перезапуска</button>
+                    <button type="button" class="secondary-action danger" id="desktopModeCancel" disabled>Вернуть обычное окно</button>
+                  </div>
+                  <p class="muted small">Если островок исчез — не трогай Explorer: через 20 секунд он автоматически вернётся. После перезапуска пробный режим всегда выключен.</p>
+                </div>
+                <div class="card settings-card" data-settings-page="weather" hidden><h2>Погода</h2><label>Город для онлайн-погоды <input type="text" id="weatherInput" placeholder="Например, Рига" maxlength="100"></label><button type="button" class="secondary-action" id="weatherSearch">Получить погоду</button><div id="weatherMessage" class="muted small">Укажите город для прогноза.</div></div>
+                <div class="card settings-card diagnostic-card" data-settings-page="diagnostics" hidden>
+                  <h2>Проверка приложения</h2>
+                  <p class="muted small">После запуска на Windows открой этот раздел, нажми «Проверить» и при необходимости пришли отчёт. Содержимое заметок, скриншотов и название города не включаются.</p>
+                  <div class="diagnostics-actions">
+                    <button type="button" class="secondary-action" id="runDiagnostics">Проверить</button>
+                    <button type="button" class="secondary-action" id="copyDiagnostics">Копировать отчёт</button>
+                    <button type="button" class="secondary-action danger" id="quitNative" hidden>Выйти из Island Lab</button>
+                  </div>
+                  <pre id="diagnosticsOutput" class="diagnostics-output">Нажми «Проверить», чтобы увидеть состояние компонентов.</pre>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <canvas id="waveCanvas" aria-hidden="true"></canvas>
+    </section>
+    <div id="utilityContent"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </main>
+  <audio id="audio" preload="metadata"></audio>
+</body>
+</html>

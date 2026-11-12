@@ -1,0 +1,552 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {dirname,join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {Script,runInNewContext} from 'node:vm';
+
+const root=join(dirname(fileURLToPath(import.meta.url)),'..');
+const code=readFileSync(join(root,'motion.js'),'utf8');
+const html=readFileSync(join(root,'index.html'),'utf8');
+const css=readFileSync(join(root,'styles.css'),'utf8');
+const app=readFileSync(join(root,'app.js'),'utf8');
+
+function engine(reduced=false){
+  const document={documentElement:{dataset:{}},createElement:()=>({})};
+  const window={matchMedia:()=>({matches:reduced})};
+  runInNewContext(code,{window,document,setTimeout,clearTimeout});
+  return {motion:window.IslandMotion,document};
+}
+
+test('motion script parses and is loaded before the UI',()=>{
+  assert.doesNotThrow(()=>new Script(code));
+  assert.ok(html.indexOf('src="./motion.js"')<html.indexOf('src="./app.js"'));
+});
+
+test('spring simulation is stable and frame-rate independent',()=>{
+  const {motion}=engine();
+  const results=[30,60,120].map(fps=>{
+    let state={x:0,v:0};
+    for(let step=0;step<fps;step++){
+      state=motion.spring(state.x,state.v,1,1/fps,3.5,.82)
+    }
+    return state
+  });
+  for(const state of results){
+    assert.ok(Math.abs(state.x-1)<.002,'position should settle near target');
+    assert.ok(Math.abs(state.v)<.005,'velocity should settle');
+  }
+  assert.ok(Math.abs(results[0].x-results[2].x)<.0005);
+});
+
+test('rapid target reversal never creates NaN or persistent drift',()=>{
+  const {motion}=engine();
+  let state={x:0,v:0};
+  for(let i=0;i<10;i++){
+    for(let j=0;j<6;j++){
+      state=motion.spring(state.x,state.v,i%2?0:1,1/60,3.65,.83)
+    }
+  }
+  for(let i=0;i<65;i++)state=motion.spring(state.x,state.v,0,1/60,3.65,.83);
+  assert.ok(Number.isFinite(state.x)&&Number.isFinite(state.v));
+  assert.ok(Math.abs(state.x)<.01);
+});
+
+test('motion settings validate profile, fallback and OS reduced-motion',()=>{
+  const {motion,document}=engine(false);
+  assert.equal(motion.setPreset('quick'),'quick');
+  assert.equal(motion.timings().morph,390);
+  assert.equal(document.documentElement.dataset.motion,'quick');
+  assert.equal(motion.setPreset('calm'),'calm');
+  assert.equal(motion.timings().morph,700);
+  assert.equal(motion.setPreset('unsupported'),'fluid');
+  assert.equal(motion.motionAllowed(),true);
+  assert.equal(motion.motionAllowed(true),false);
+  assert.equal(engine(true).motion.motionAllowed(),false);
+});
+
+test('damping approaches targets without overshooting for simple controls',()=>{
+  const {motion}=engine();
+  let value=0;
+  for(let i=0;i<100;i++){
+    value=motion.smooth(value,1,1/60,12);
+    assert.ok(value>=0&&value<=1)
+  }
+  assert.ok(value>.99);
+});
+
+test('lyric transitions update text even when animation is disabled',()=>{
+  const {motion}=engine();
+  const lines=['old 1','old 2','old 3'].map(text=>({textContent:text}));
+  motion.updateLyrics({},lines,['new 1','new 2','new 3'],{enabled:false});
+  assert.deepEqual(lines.map(el=>el.textContent),['new 1','new 2','new 3']);
+});
+
+test('capsule morph does not use display:none and respects reduced motion',()=>{
+  assert.match(css,/--motion-morph:560ms/);
+  assert.match(css,/\.island\.collapsed \.expanded-panel\{/);
+  assert.match(css,/\.island \.expanded-panel\{[\s\S]*?display:flex!important/);
+  assert.match(css,/html\.motion-reduced/);
+  assert.match(html,/id="motionStyle"/);
+  assert.match(app,/refreshIslandHeight\(/);
+  assert.match(app,/onceTransition\(island,'width'/);
+  assert.match(app,/document\.startViewTransition\(change\)/);
+  assert.match(app,/syncTabIndicator\(/);
+});
+
+test('wave is driven by smoothed real bands and runs only while needed',()=>{
+  assert.match(app,/const waveDynamics=/);
+  assert.match(app,/motion\?\.spring\(waveDynamics\.height/);
+  assert.match(app,/motion\?\.smooth\(/);
+  assert.match(app,/function waveHasTail\(/);
+  assert.match(app,/function startWaveLoop\(/);
+  assert.match(app,/if\(!hasSource&&!waveHasTail\(\)\)return/);
+  assert.match(app,/now-lastProgress>=90/);
+});
+
+test('wave drive responds to bass transients and stays flat in silence',()=>{
+  const start=app.indexOf('function waveDrive(');
+  const end=app.indexOf('function resetWaveDynamics()',start);
+  const drive=runInNewContext(app.slice(start,end)+'\nwaveDrive');
+  const quiet=Array(16).fill(0);
+  const bass=quiet.slice();bass[1]=.8;
+  assert.equal(drive({rms:0,bands:bass},160).level,0);
+  const light=drive({rms:.06,bands:quiet},65).level;
+  const strike=drive({rms:.06,bands:bass},65).level;
+  assert.ok(strike>light*1.7);
+  assert.ok(drive({rms:.06,bands:bass},125).level>strike);
+});
+
+test('frame pacing summary reports mean FPS, p95 and jank',()=>{
+  const start=app.indexOf('function summarizeMotionFrames(');
+  const end=app.indexOf('let lastMotionBenchmark=',start);
+  assert.ok(start>=0&&end>start);
+  const summarize=runInNewContext(app.slice(start,end)+'\nsummarizeMotionFrames',{});
+  const normal=summarize(Array(60).fill(1000/60));
+  assert.equal(normal.fps,60);
+  assert.equal(normal.slowFrames,0);
+  assert.ok(normal.p95Ms>16&&normal.p95Ms<17);
+  const janky=summarize([...Array(18).fill(16.7),60,60]);
+  assert.equal(janky.slowFrames,2);
+  assert.equal(janky.p95Ms,60);
+  assert.equal(janky.baselineMs,16.7);
+  // A 120Hz display has an ~8.3ms budget; 16.7ms should count as a
+  // dropped frame even though it is below the old fixed 33ms threshold.
+  const highRefresh=summarize([...Array(18).fill(8.3),16.7,16.7]);
+  assert.equal(highRefresh.slowFrames,2);
+  assert.equal(highRefresh.baselineMs,8.3);
+  assert.equal(summarize([]),null);
+  assert.match(html,/id="motionBenchmarkBtn"/);
+  assert.match(html,/id="motionBenchmarkResult"/);
+});
+
+test('rapid native expand followed by collapse queues final Windows size',async()=>{
+  const section=(a,b)=>{
+    const from=app.indexOf(a),to=app.indexOf(b,from);
+    assert.ok(from>=0&&to>from);
+    return app.slice(from,to);
+  };
+  const native=section('let nativeResizeQueue=','const KEY=');
+  const commit=section('function commitExpanded(','let expandRequest=');
+  const toggle=section('async function setExpanded(','function showTab(');
+  const classes=new Set(['collapsed']);
+  const issued=[],waveRooms=[];
+  let finishFirst;
+  const gate=new Promise(resolve=>{finishFirst=resolve});
+  const mocks={
+    nativeShell:true,
+    nativeApi:{core:{invoke:async(_cmd,args)=>{
+      issued.push(args.expanded);
+      waveRooms.push(args.waveRoom);
+      if(issued.length===1)await gate;
+      return null
+    }}},
+    island:{
+      classList:{
+        contains:name=>classes.has(name),
+        add:name=>classes.add(name),
+        remove:name=>classes.delete(name),
+        toggle:(name,on)=>on?classes.add(name):classes.delete(name)
+      },
+      style:{setProperty(){}}
+    },
+    panel:{inert:true,contains:()=>false},
+    collapsedBar:{inert:false,contains:()=>false},
+    document:{activeElement:null},
+    $:()=>({focus(){}}),
+    motion:{
+      motionAllowed:()=>true,
+      timings:()=>({morph:560}),
+      onceTransition:()=>Promise.resolve(),
+      clearLyrics(){}
+    },
+    options:{reducedMotion:false},
+    requestAnimationFrame:()=>1,
+    resizeWave(){},drawWave(){},startWaveLoop(){},waveNeedsRoom:()=>true,
+    syncTabIndicator(){},refreshIslandHeight(){},clearWave(){},
+    setTimeout:()=>1,clearTimeout(){},
+    console:{warn(){}}
+  };
+  const expr=`
+    let nativeBridgeStatus='';
+    let expanded=false,morphSequence=0,morphTimer=0;
+    ${native}
+    ${commit}
+    let expandRequest=0;
+    ${toggle}
+    return {setExpanded,getState:()=>({expanded,collapsed:island.classList.contains('collapsed')})}
+  `;
+  const simulator=runInNewContext(
+    'new Function(...Object.keys(inputs),source)(...Object.values(inputs))',
+    {inputs:mocks,source:expr}
+  );
+  const opening=simulator.setExpanded(true);
+  for(let i=0;i<5;i++)await Promise.resolve();
+  const closing=simulator.setExpanded(false);
+  finishFirst();
+  await Promise.all([opening,closing]);
+  assert.deepEqual(issued,[true,false]);
+  assert.deepEqual(waveRooms,[true,true]);
+  assert.equal(simulator.getState().expanded,false);
+  assert.equal(simulator.getState().collapsed,true);
+});
+
+test('weather and music metadata change with optional appearance motion',()=>{
+  assert.match(app,/function animateLabel\(/);
+  assert.match(app,/animateLabel\('#trackName'/);
+  assert.match(app,/animateLabel\('#weatherTemp'/);
+  assert.match(code,/function animateValue\(/);
+  const {motion}=engine(true);
+  const label={textContent:'Before'};
+  motion.animateValue(label,'After',{enabled:true});
+  assert.equal(label.textContent,'After');
+});
+
+test('snow uses real frame delta and does not stay at old 22fps',()=>{
+  assert.match(app,/frameSeconds=snowFrame\?/);
+  assert.match(app,/flake\.v\*24\*frameSeconds\/h/);
+  assert.doesNotMatch(app,/time-snowFrame>=44/);
+});
+
+test('window capsule clips content but downward waveform escapes as a sibling',()=>{
+  assert.match(html, /<\/div>\s*<canvas id="waveCanvas" aria-hidden="true"><\/canvas>\s*<\/section>/);
+  assert.match(css,/\.island\{overflow:hidden\}/);
+  assert.match(css,/\.island-shell>#waveCanvas\{/);
+  assert.match(css,/\.island-shell>\.island\.collapsed\+#waveCanvas\{[\s\S]*?opacity:0;visibility:hidden/);
+  assert.match(css,/transition:opacity 180ms ease,visibility 0s linear 180ms/);
+  assert.match(app,/cancelAnimationFrame\(waveRaf\)/);
+  assert.match(app,/--wave-width/);
+  assert.match(app,/borderObserver\.observe\(island\)/);
+});
+
+test('motion benchmark is on-demand and does not poll in the background',()=>{
+  assert.match(app,/benchmarkButton\.addEventListener\('click'/);
+  assert.match(app,/benchmarkRunning=true/);
+  assert.match(app,/if\(document\.hidden&&benchmarkRunning\)/);
+  assert.doesNotMatch(app,/requestAnimationFrame\(sample\);\s*\/\* Live weather/);
+});
+
+test('screen redraws are throttled without losing the 60fps waveform budget',()=>{
+  assert.match(app,/if\(now-lastWave>=6\)/);
+  assert.match(app,/if\(now-lastProgress>=90\)/);
+  assert.match(app,/if\(!hasSource&&!waveHasTail\(\)\)return/);
+});
+
+test('center expand button does not trigger the parent expand handler twice',()=>{
+  assert.match(app,/\$\('#expandTarget'\)\.addEventListener\('click',event=>\{/);
+  assert.match(app,/event\.stopPropagation\(\)/);
+  assert.match(app,/event\.target\.closest\('#expandTarget'\)/);
+});
+
+test('failed Windows viewport expansion leaves the visible capsule collapsed',async()=>{
+  const section=(a,b)=>{
+    const start=app.indexOf(a),end=app.indexOf(b,start);
+    assert.ok(start>=0&&end>start);
+    return app.slice(start,end)
+  };
+  const native=section('let nativeResizeQueue=','const KEY=');
+  const commit=section('function commitExpanded(','let expandRequest=');
+  const toggle=section('async function setExpanded(','function showTab(');
+  const classes=new Set(['collapsed']);
+  const messages=[];
+  const mocks={
+    nativeShell:true,
+    nativeApi:{core:{invoke:async()=>{throw Error('simulated resize failure')}}},
+    island:{
+      classList:{
+        contains:key=>classes.has(key),
+        add:key=>classes.add(key),
+        remove:key=>classes.delete(key),
+        toggle:(key,enabled)=>enabled?classes.add(key):classes.delete(key)
+      },
+      style:{setProperty(){}}
+    },
+    panel:{inert:true,contains:()=>false},
+    collapsedBar:{inert:false,contains:()=>false},
+    document:{activeElement:null},
+    $:()=>({focus(){}}),motion:{motionAllowed:()=>true,timings:()=>({morph:560}),
+      onceTransition:()=>Promise.resolve(),clearLyrics(){}},
+    options:{reducedMotion:false},
+    requestAnimationFrame:()=>1,setTimeout:()=>1,clearTimeout(){},
+    resizeWave(){},drawWave(){},startWaveLoop(){},waveNeedsRoom:()=>false,
+    syncTabIndicator(){},refreshIslandHeight(){},clearWave(){},
+    toast(message){messages.push(message)},
+    console:{warn(){}}
+  };
+  const source=`
+    let nativeBridgeStatus='',expanded=false,morphSequence=0,morphTimer=0;
+    ${native}
+    ${commit}
+    let expandRequest=0;
+    ${toggle}
+    return {setExpanded,getState:()=>({expanded,collapsed:island.classList.contains('collapsed')})}
+  `;
+  const adapter=runInNewContext(
+    'new Function(...Object.keys(inputs),source)(...Object.values(inputs))',
+    {inputs:mocks,source}
+  );
+  await adapter.setExpanded(true);
+  assert.equal(adapter.getState().expanded,false);
+  assert.equal(adapter.getState().collapsed,true);
+  assert.match(messages[0],/Не удалось раскрыть окно/);
+});
+
+test('cover art transitions only when changing a track and while expanded',()=>{
+  assert.match(app,/function animateCoverChange\(/);
+  assert.match(app,/if\(!expanded\|\|tab!=='home'/);
+  assert.match(app,/artwork\.animate\(\[/);
+  assert.ok([...app.matchAll(/animateCoverChange\(\)/g)].length>=3);
+  assert.match(css,/\.island\.music-playing \.status-dot/);
+  assert.match(css,/html\.motion-reduced \.island\.music-playing \.status-dot\{animation:none\}/);
+});
+
+test('large full-panel CSS blur and canvas will-change are not used',()=>{
+  assert.doesNotMatch(css,/opacity:\.5;filter:blur/);
+  assert.doesNotMatch(css,/will-change:contents/);
+});
+
+test('tabs expose ARIA relationships and roving keyboard navigation',()=>{
+  for(const name of ['home','shots','snow','notes','weather']){
+    assert.match(html,new RegExp('id="tab-'+name+'"[^>]*role="tab"[^>]*aria-controls="view-'+name+'"'));
+    assert.match(html,new RegExp('id="view-'+name+'" role="tabpanel"'));
+  }
+  assert.match(html,/<nav class="tabs" role="tablist"/);
+  const start=app.indexOf('function showTab('),end=app.indexOf("$('#expandTarget').addEventListener",start);
+  assert.ok(start>=0&&end>start);
+  const buttons=['home','shots','snow','notes','settings'].map((name,index)=>{
+    const classes=new Set(index===0?['tab','active']:['tab']);
+    return {
+      dataset:{tab:name},disabled:false,tabIndex:index===0?0:-1,
+      attrs:{},classList:{toggle:(key,on)=>on?classes.add(key):classes.delete(key)},
+      setAttribute(key,value){this.attrs[key]=value},
+      focus(){documentMock.activeElement=this},
+      scrollIntoView(){this.wasScrolled=true}
+    };
+  });
+  const views=buttons.map(button=>({
+    id:'view-'+button.dataset.tab,inert:button.dataset.tab!=='home',
+    classList:{toggle(){}}
+  }));
+  const documentMock={activeElement:buttons[0]};
+  const listeners={};
+  const navMock={addEventListener:(name,fn)=>{listeners[name]=fn}};
+  const context={
+    nav:navMock,tabRequest:0,tabTransition:null,tab:'home',expanded:true,
+    tabScrollPositions:{},panelBody:{scrollTop:0},
+    document:documentMock,
+    island:{classList:{contains:()=>false}},
+    motion:{motionAllowed:()=>false},
+    options:{reducedMotion:false},
+    $:selector=>views.find(view=>selector==='#'+view.id),
+    $$:selector=>selector==='.tab'?buttons:selector==='.tab-content'?views:[],
+    requestAnimationFrame:callback=>{callback();return 1},
+    syncTabIndicator(){},refreshIslandHeight(){},updateEditor(){},setExpanded(){}
+  };
+  const script=app.slice(start,end);
+  const simulator=runInNewContext(
+    'new Function(...Object.keys(context),script+";return {showTab}")( ...Object.values(context) )',
+    {context,script}
+  );
+  assert.equal(typeof listeners.keydown,'function');
+  const move=(key,index)=>{
+    let prevented=false;
+    listeners.keydown({key,preventDefault(){prevented=true}});
+    assert.equal(prevented,true);
+    assert.equal(documentMock.activeElement,buttons[index]);
+    assert.equal(buttons[index].attrs['aria-selected'],'true');
+    assert.equal(buttons[index].tabIndex,0);
+    assert.equal(views[index].inert,false);
+    assert.equal(buttons.filter(button=>button.tabIndex===0).length,1)
+  };
+  move('ArrowRight',1);
+  move('End',4);
+  move('ArrowRight',0);
+  move('ArrowLeft',4);
+  move('Home',0);
+  context.panelBody.scrollTop=330;
+  simulator.showTab('settings');
+  assert.equal(context.panelBody.scrollTop,0,'first visit starts at top');
+  context.panelBody.scrollTop=190;
+  simulator.showTab('home');
+  assert.equal(context.panelBody.scrollTop,330,'home scroll restored');
+  simulator.showTab('settings');
+  assert.equal(context.panelBody.scrollTop,190,'settings scroll restored');
+});
+
+test('capsule transfers keyboard focus between visible layouts',()=>{
+  const start=app.indexOf('function commitExpanded(');
+  const end=app.indexOf('let expandRequest=',start);
+  assert.ok(start>=0&&end>start);
+  const focuses=[];
+  const activeMini={id:'mini'};
+  const activePanel={id:'panel'};
+  const documentMock={activeElement:activeMini};
+  const collapsedBar={
+    inert:false,
+    contains:element=>element===activeMini
+  };
+  const panel={
+    inert:true,
+    contains:element=>element===activePanel
+  };
+  const classes=new Set(['collapsed']);
+  const context={
+    morphSequence:0,morphTimer:0,expanded:false,waveRaf:0,
+    island:{
+      classList:{
+        add:name=>classes.add(name),remove:name=>classes.delete(name),
+        contains:name=>classes.has(name),
+        toggle:(name,on)=>on?classes.add(name):classes.delete(name)
+      },
+      style:{setProperty(){}}
+    },
+    document:documentMock,collapsedBar,panel,
+    $:selector=>({focus:()=>focuses.push(selector)}),
+    motion:{motionAllowed:()=>false,timings:()=>({morph:0}),clearLyrics(){}},
+    options:{reducedMotion:true},
+    clearTimeout(){},setTimeout:()=>1,
+    requestAnimationFrame:()=>1,
+    resizeWave(){},drawWave(){},startWaveLoop(){},
+    syncTabIndicator(){},refreshIslandHeight(){},clearWave(){},
+    cancelAnimationFrame(){}
+  };
+  const script=app.slice(start,end);
+  const instance=runInNewContext(
+    'new Function(...Object.keys(context),script+";return {commitExpanded}")( ...Object.values(context) )',
+    {context,script}
+  );
+  instance.commitExpanded(true);
+  assert.equal(panel.inert,false);
+  assert.equal(collapsedBar.inert,true);
+  assert.equal(focuses.at(-1),'.tab.active');
+  documentMock.activeElement=activePanel;
+  instance.commitExpanded(false);
+  assert.equal(panel.inert,true);
+  assert.equal(collapsedBar.inert,false);
+  assert.equal(focuses.at(-1),'#expandTarget');
+});
+
+test('wave gradient is cached and frame rate supports 120/144Hz',()=>{
+  assert.match(app,/function getWaveGradient\(/);
+  assert.match(app,/cachedWaveHeight===wavePanelH/);
+  assert.match(app,/cachedWaveGradient=null/);
+  assert.match(app,/if\(now-lastWave>=6\)/);
+  assert.doesNotMatch(app,/getComputedStyle\(document\.documentElement\)[\s\S]{0,80}getPropertyValue\('--accent'\)/);
+});
+
+test('system reduced-motion preference disables actual snow and waveform rendering loops',()=>{
+  const snowStart=app.indexOf('function snowEnabled()');
+  const snowEnd=app.indexOf('function renderSnow(',snowStart);
+  assert.ok(snowStart>=0&&snowEnd>snowStart);
+  const getter=runInNewContext(
+    app.slice(snowStart,snowEnd)+'\nsnowEnabled',
+    {
+      options:{snow:true,backgroundSnow:true,reducedMotion:false,snowIntensity:40},
+      motion:{motionAllowed:()=>false},
+      nativeShell:false,document:{hidden:false}
+    }
+  );
+  assert.equal(getter(),false);
+  assert.match(app,/reducedPreference\?\.addEventListener\?\.\('change'/);
+  assert.match(app,/motion\?\.motionAllowed\(options\.reducedMotion\)===false/);
+  assert.match(app,/waveDynamics\.bands\.fill\(0\)/);
+});
+
+test('compact controls remain keyboard-visible and touch-friendly',()=>{
+  assert.match(html,/<nav class="tabs" role="tablist"/);
+  assert.match(css,/\.mini-btn\{width:34px;height:38px/);
+  assert.match(css,/button:focus-visible,select:focus-visible/);
+  assert.match(css,/@media\(pointer:coarse\)/);
+  assert.match(css,/@media\(max-width:360px\)/);
+});
+
+test('wave canvas bitmap follows last width while reallocating at most around 30Hz',()=>{
+  const start=app.indexOf("if(typeof ResizeObserver!=='undefined'){");
+  const end=app.indexOf('/* Music engine:',start);
+  assert.ok(start>=0&&end>start);
+  const observers=[],callbacks=[],properties=[],renders=[];
+  const ctx={
+    expanded:true,
+    island:{
+      classList:{contains:()=>false},
+      getBoundingClientRect:()=>({width:ctx.width})
+    },
+    width:350,panel:{},
+    ResizeObserver:class{
+      constructor(fn){this.fn=fn;observers.push(this)}
+      observe(){}
+    },
+    requestAnimationFrame:fn=>{callbacks.push(fn);return callbacks.length},
+    $:()=>({style:{setProperty:(name,value)=>properties.push([name,value])}}),
+    resizeWave:()=>renders.push('resize'),
+    drawWave:()=>renders.push('draw'),
+    refreshIslandHeight(){}
+  };
+  runInNewContext(app.slice(start,end),ctx);
+  assert.equal(observers.length,2);
+  for(let i=0;i<10;i++){
+    ctx.width=350+i*20;
+    observers[1].fn()
+  }
+  assert.equal(callbacks.length,1,'multiple observer notifications should be coalesced');
+  callbacks.shift()(12);
+  assert.equal(renders.length,0,'first frame below threshold must defer bitmap');
+  callbacks.shift()(35);
+  assert.deepEqual(renders,['resize','draw']);
+  ctx.width=900;
+  observers[1].fn();
+  callbacks.shift()(48);
+  assert.equal(renders.length,2,'do not allocate bitmap again within 32ms');
+  callbacks.shift()(73);
+  assert.equal(renders.length,4,'final width must not be lost on throttled resize');
+  assert.deepEqual(properties.at(-1),['--wave-width','900px']);
+});
+
+test('cancelled pointer gestures release drag state without storing an abandoned position',()=>{
+  const start=app.indexOf('function stopDrag(e){');
+  const end=app.indexOf("$('#dragHandle').addEventListener",start);
+  assert.ok(start>=0&&end>start);
+  const saved=[],releases=[];
+  const env={
+    dragging:{id:7},
+    shell:{getBoundingClientRect:()=>({left:42,top:60})},
+    options:{offset:null},
+    persist:()=>saved.push(true)
+  };
+  const adapter=runInNewContext(
+    '(()=>{'+app.slice(start,end)+'\nreturn {stopDrag,setDrag:id=>dragging={id}}})()',env
+  );
+  adapter.stopDrag({type:'pointercancel',pointerId:7,currentTarget:{
+    releasePointerCapture:id=>releases.push(id)
+  }});
+  assert.equal(saved.length,0);
+  adapter.setDrag(8);
+  adapter.stopDrag({type:'pointerup',pointerId:8,currentTarget:{
+    releasePointerCapture:id=>releases.push(id)
+  }});
+  assert.deepEqual({...env.options.offset},{left:42,top:60});
+  assert.equal(saved.length,1);
+  assert.deepEqual(releases,[8]);
+  assert.match(app,/addEventListener\('lostpointercapture',stopDrag\)/);
+  assert.match(css,/\.panel-drag\{touch-action:none/);
+});

@@ -1,0 +1,22 @@
+[package]
+name = "island-lab"
+version = "0.1.0"
+description = "Island Lab desktop capsule for Windows"
+edition = "2021"
+rust-version = "1.95"
+build = "build.rs"
+
+[dependencies]
+tauri = { version = "2" }
+serde = { version = "1", features = ["derive"] }
+base64 = "0.22"
+dirs = "6"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Foundation", "Media_Control"] }
+wasapi = "0.27"
+windows-sys = { version = "0.61", features = ["Win32_Graphics_Gdi", "Win32_UI_Accessibility", "Win32_UI_Controls_Dialogs", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_LibraryLoader", "Win32_System_Threading"] }
+png = "0.18"
+
+[build-dependencies]
+tauri-build = { version = "2" }
