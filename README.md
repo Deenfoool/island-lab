@@ -5,6 +5,7 @@
 <p align="center">
   <a href="https://github.com/Deenfoool/island-lab/releases/latest"><strong>Скачать для Windows</strong></a>
   · <a href="https://github.com/Deenfoool/island-lab/releases/latest/download/Island-Lab-with-Snowy-windows-x64.zip">Скачать комплект со снегом</a>
+  · <a href="https://deenfoool.github.io/portfolio/">Портфолио автора</a>
 </p>
 
 ![Развёрнутый Island Lab с плеером, синхронным текстом и погодой](docs/images/home.png)
